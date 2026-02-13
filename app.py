@@ -1,0 +1,302 @@
+import streamlit as st
+import pandas as pd
+import sqlite3
+from datetime import datetime
+import plotly.express as px
+import io
+import json
+from docx import Document
+from docx.shared import Pt, Inches
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+# --- НАСТРОЙКИ СТРАНИЦЫ ---
+st.set_page_config(page_title="Smart Завуч: Фокус-группа", layout="wide")
+
+# --- СЛОВАРЬ ИНТЕРФЕЙСА (Полный список ключей для исключения KeyError) ---
+LANGS = {
+    'RU': {
+        'title': "Smart Завуч 🇰🇿",
+        'header': "ЛИСТ НАБЛЮДЕНИЯ УРОКА (ФОКУС-ГРУППА)",
+        'nav_new': "📊 Ввод данных (Шаблон)",
+        'nav_rating': "🏆 Сводный рейтинг",
+        'nav_map': "📈 Динамика прогресса",
+        'teacher': "ФИО Учителя",
+        'student': "ФИО Ученика (Резерв)",
+        'subject': "Предмет",
+        'grade': "Класс",
+        'date': "Дата",
+        'quarter': "Четверть",
+        'topic': "Тема урока",
+        'goal': "Цели урока (со слов учителя)",
+        'purpose': "Цель посещения",
+        'res_header': "2. Назардағы оқушылар / Фокус на учащихся 'резерва'",
+        'res_fio': "ФИО ученика",
+        'res_inter': "Взаимодействие учителя (приемы, вопросы)",
+        'res_react': "Реакция и активность (ответы, действия)",
+        'res_idx': "Индекс (УД/ТБ)",
+        'crit_header': "3. Общий анализ урока (2+, 1+, -)",
+        'prof_header': "🎯 Профессионализм и Методы",
+        'ict_label': "Использование ИКТ (инструменты, платформы)",
+        'methods_label': "Методы и приемы обучения",
+        'reflection': "Рефлексия (обратная связь)",
+        'stages_header': "⏳ Ход урока по этапам (Учитель / Ученик)",
+        'conclusion_header': "4. Выводы и рекомендации",
+        'strengths_label': "Сильные стороны урока (1, 2, 3):",
+        'growth_label': "Зоны роста (1, 2, 3):",
+        'final_advice': "5. Конкретные рекомендации учителю",
+        'save_btn': "💾 Сохранить отчет в базу",
+        'excel_btn': "📥 Скачать мониторинг (Excel)",
+        'word_btn': "📄 Скачать протокол (Word)",
+        'fact_label': "Комментарии (факты, примеры)",
+        'score_label': "Балл",
+        'action_t': "Действие учителя",
+        'action_s': "Действие ученика",
+        'copy_msg': "Текст справки готов:"
+    },
+    'KZ': {
+        'title': "Smart Завуч 🇰🇿",
+        'header': "САБАҚТЫ БАҚЫЛАУ ПАРАҒЫ (РЕЗЕРВ)",
+        'nav_new': "📊 Деректерді енгізу",
+        'nav_rating': "🏆 Жиынтық рейтинг",
+        'nav_map': "📈 Прогресс картасы",
+        'teacher': "Мұғалімнің АЖТ",
+        'student': "Оқушының АЖТ (Резерв)",
+        'subject': "Пән",
+        'grade': "Сынып",
+        'date': "Күні",
+        'quarter': "Тоқсан",
+        'topic': "Сабақтың тақырыбы",
+        'goal': "Сабақ мақсаты (мұғалім қойған)",
+        'purpose': "Бақылау мақсаты",
+        'res_header': "2. Назардағы оқушылар ('резерв')",
+        'res_fio': "Оқушының АЖТ",
+        'res_inter': "Мұғалімнің әрекеті (сұрақтар, әдістер)",
+        'res_react': "Оқушының реакциясы мен белсенділігі",
+        'res_idx': "Завучтың индекстері (ОІӘ/ТБ)",
+        'crit_header': "3. Сабақтың жалпы талдауы (2+, 1+, -)",
+        'prof_header': "🎯 Кәсіби шеберлік пен әдістер",
+        'ict_label': "АКТ қолданылуы (құралдар, платформалар)",
+        'methods_label': "Оқыту әдіс-тәсілдері",
+        'reflection': "Рефлексия (кері байланыс)",
+        'stages_header': "⏳ Сабақ кезеңдері (Мұғалім / Оқушы)",
+        'conclusion_header': "4. Қорытынды және ұсыныстар",
+        'strengths_label': "Сабақтың күшті жақтары (1, 2, 3):",
+        'growth_label': "Даму аймақтары (1, 2, 3):",
+        'final_advice': "5. Мұғалімге арналған нақты ұсыныстар",
+        'save_btn': "💾 Мәліметтерді сақтау",
+        'excel_btn': "📥 Есепті жүктеу (Excel)",
+        'word_btn': "📄 Хаттаманы жүктеу (Word)",
+        'fact_label': "Түсініктеме (фактілер, мысалдар)",
+        'score_label': "Баға",
+        'action_t': "Мұғалім әрекеті",
+        'action_s': "Оқушы реакциясы",
+        'copy_msg': "Анықтама мәтіні дайын:"
+    }
+}
+
+CRITERIA = [
+    "Четкость и достижимость целей урока",
+    "Содержание материала (научность, доступность, воспитательная ценность)",
+    "Разнообразие методов и приемов (АКТ, ИКТ, группы, жеке)",
+    "Дифференциация заданий для учащихся 'резерва'",
+    "Логика и взаимосвязь этапов урока",
+    "Критериальное оценивание (кері байланыс, формативті)",
+    "Коммуникация и психологическая атмосфера",
+    "Эффективность использования времени"
+]
+
+# --- ИНИЦИАЛИЗАЦИЯ БД ---
+def init_db():
+    conn = sqlite3.connect('school_focus_final_v14.db')
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS reports (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        date TEXT, quarter INTEGER, teacher TEXT, student TEXT, subject TEXT, grade TEXT, topic TEXT, goal TEXT,
+        purpose TEXT, start_t TEXT, start_s TEXT, middle_t TEXT, middle_s TEXT, end_t TEXT, end_s TEXT,
+        ict_usage TEXT, methods TEXT, reflection TEXT,
+        reserve_json TEXT, scores_json TEXT, comments_json TEXT,
+        s1 TEXT, s2 TEXT, s3 TEXT, g1 TEXT, g2 TEXT, g3 TEXT, advice TEXT, percent REAL, lang TEXT
+    )''')
+    conn.commit()
+    conn.close()
+
+# --- ФУНКЦИЯ СОЗДАНИЯ WORD (Официальный бланк) ---
+def create_official_docx(data, lang):
+    L = LANGS[lang]
+    doc = Document()
+    style = doc.styles['Normal']
+    style.font.name = 'Times New Roman'
+    style.font.size = Pt(11)
+
+    # Заголовок
+    h = doc.add_paragraph()
+    h.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run = h.add_run(L['header'])
+    run.bold = True
+    run.font.size = Pt(14)
+
+    # 1. Инфо
+    doc.add_heading('1. Общая информация', level=1)
+    t1 = doc.add_table(rows=6, cols=2)
+    t1.style = 'Table Grid'
+    info = [(L['date'], data['date']), (L['grade'], data['grade']), (L['subject'], data['subject']), (L['teacher'], data['teacher']), (L['topic'], data['topic']), (L['goal'], data['goal'])]
+    for i, (k, v) in enumerate(info):
+        t1.cell(i, 0).text = k
+        t1.cell(i, 1).text = str(v)
+
+    # 2. Резерв
+    doc.add_heading(L['res_header'], level=1)
+    t2 = doc.add_table(rows=1, cols=4)
+    t2.style = 'Table Grid'
+    hdr = t2.rows[0].cells
+    hdr[0].text, hdr[1].text, hdr[2].text, hdr[3].text = "ФИО", L['action_t'], L['action_s'], "УД/ТБ"
+    res_list = json.loads(data['reserve_json'])
+    for r in res_list:
+        row = t2.add_row().cells
+        row[0].text, row[1].text, row[2].text, row[3].text = r['fio'], r['act'], r['re'], r['idx']
+
+    # 3. Хронометраж
+    doc.add_heading(L['stages_header'], level=1)
+    t3 = doc.add_table(rows=4, cols=3)
+    t3.style = 'Table Grid'
+    th = t3.rows[0].cells
+    th[0].text, th[1].text, th[2].text = "Этап", L['action_t'], L['action_s']
+    t3.cell(1,0).text = "Начало"; t3.cell(1,1).text = data['start_t']; t3.cell(1,2).text = data['start_s']
+    t3.cell(2,0).text = "Середина"; t3.cell(2,1).text = data['middle_t']; t3.cell(2,2).text = data['middle_s']
+    t3.cell(3,0).text = "Конец"; t3.cell(3,1).text = data['end_t']; t3.cell(3,2).text = data['end_s']
+
+    # 4. Профессионализм
+    doc.add_heading('4. Профессионализм и Анализ', level=1)
+    doc.add_paragraph(f"ИКТ: {data['ict_usage']}")
+    doc.add_paragraph(f"Методы: {data['methods']}")
+    doc.add_paragraph(f"Рефлексия: {data['reflection']}")
+
+    # 5. Выводы
+    doc.add_heading(L['conclusion_header'], level=1)
+    doc.add_paragraph(f"Сильные стороны:\n1. {data['s1']}\n2. {data['s2']}\n3. {data['s3']}")
+    doc.add_paragraph(f"Зоны роста:\n1. {data['g1']}\n2. {data['g2']}\n3. {data['g3']}")
+    doc.add_paragraph(f"РЕКОМЕНДАЦИЯ: {data['advice']}")
+
+    bio = io.BytesIO()
+    doc.save(bio)
+    return bio.getvalue()
+
+# --- ПРИЛОЖЕНИЕ ---
+init_db()
+st.sidebar.title("🌍 Язык / Тіл")
+lang_choice = st.sidebar.selectbox("Выберите язык:", ['RU', 'KZ'])
+L = LANGS[lang_choice]
+
+menu = st.sidebar.radio(L['title'], [L['nav_new'], L['nav_rating'], L['nav_map']])
+
+if menu == L['nav_new']:
+    st.header(L['header'])
+    with st.form("comprehensive_form"):
+        # 1. Информация
+        st.subheader("1. Общая информация / Жалпы ақпарат")
+        c1, c2, c3 = st.columns(3)
+        teacher = c1.text_input(L['teacher'])
+        student = c1.text_input(L['student'])
+        subject = c2.text_input(L['subject'])
+        grade = c2.text_input(L['grade'])
+        date = c3.date_input(L['date'], datetime.now())
+        quarter = c3.selectbox(L['quarter'], [1, 2, 3, 4])
+        topic = st.text_input(L['topic'])
+        goal = st.text_area(L['goal'])
+        purpose = st.text_input(L['purpose'], value="Анализ работы с академическим резервом")
+
+        # 2. Резерв
+        st.divider()
+        st.subheader(L['res_header'])
+        res_list = []
+        for i in range(1, 4):
+            cols = st.columns([2, 3, 3, 1])
+            fio = cols[0].text_input(f"Ученик {i} ФИО", key=f"fio_{i}")
+            act = cols[1].text_input(L['res_inter'], key=f"act_{i}")
+            re = cols[2].text_input(L['res_react'], key=f"re_{i}")
+            idx = cols[3].text_input("УД/ТБ", key=f"idx_{i}")
+            res_list.append({"fio": fio, "act": act, "re": re, "idx": idx})
+
+        # 3. Хронометраж
+        st.divider()
+        st.subheader(L['stages_header'])
+        st_tabs = st.tabs(["Начало", "Середина", "Конец", "Методы/ИКТ"])
+        with st_tabs[0]:
+            cl1, cl2 = st.columns(2)
+            start_t = cl1.text_area(L['action_t'] + " (Начало)", key="st_t")
+            start_s = cl2.text_area(L['action_s'] + " (Начало)", key="st_s")
+        with st_tabs[1]:
+            cl1, cl2 = st.columns(2)
+            middle_t = cl1.text_area(L['action_t'] + " (Середина)", key="md_t")
+            middle_s = cl2.text_area(L['action_s'] + " (Середина)", key="md_s")
+        with st_tabs[2]:
+            cl1, cl2 = st.columns(2)
+            end_t = cl1.text_area(L['action_t'] + " (Конец)", key="ed_t")
+            end_s = cl2.text_area(L['action_s'] + " (Конец)", key="ed_s")
+        with st_tabs[3]:
+            ict = st.text_area(L['ict_label'], key="ict_v")
+            methods = st.text_area(L['methods_label'], key="meth_v")
+            reflection = st.text_area(L['reflection'], key="refl_v")
+
+        # 4. Критерии
+        st.divider()
+        st.subheader(L['crit_header'])
+        scores_res, comms_res = {}, {}
+        for i, crit in enumerate(CRITERIA):
+            cl, cs, cf = st.columns([3, 1, 3])
+            cl.write(f"**{i+1}. {crit}**")
+            sc_val = cs.selectbox(L['score_label'], [2, 1, 0], format_func=lambda x: "2+" if x==2 else "1+" if x==1 else "-", key=f"sc_{i}")
+            cm_val = cf.text_input(L['fact_label'], key=f"cm_{i}")
+            scores_res[f"k{i}"] = sc_val
+            comms_res[f"k{i}"] = cm_val
+
+        # 5. Выводы
+        st.divider()
+        st.subheader(L['conclusion_header'])
+        s1 = st.text_input("Сильная сторона 1", key="s1_v")
+        s2 = st.text_input("Сильная сторона 2", key="s2_v")
+        s3 = st.text_input("Сильная сторона 3", key="s3_v")
+        g1 = st.text_input("Зона роста 1", key="g1_v")
+        g2 = st.text_input("Зона роста 2", key="g2_v")
+        g3 = st.text_input("Зона роста 3", key="g3_v")
+        advice = st.text_area(L['final_advice'], key="adv_v")
+
+        if st.form_submit_button(L['save_btn']):
+            total = sum(scores_res.values())
+            percent = (total / 16) * 100
+            conn = sqlite3.connect('school_focus_final_v14.db')
+            c = conn.cursor()
+            c.execute('''INSERT INTO reports 
+                (date, quarter, teacher, student, subject, grade, topic, goal, purpose, start_t, start_s, middle_t, middle_s, end_t, end_s, ict_usage, methods, reflection, reserve_json, scores_json, comments_json, s1, s2, s3, g1, g2, g3, advice, percent, lang) 
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''', 
+                (date.strftime("%Y-%m-%d"), quarter, teacher, student, subject, grade, topic, goal, purpose, start_t, start_s, middle_t, middle_s, end_t, end_s, ict, methods, reflection, json.dumps(res_list), json.dumps(scores_res), json.dumps(comms_res), s1, s2, s3, g1, g2, g3, advice, percent, lang_choice))
+            conn.commit()
+            conn.close()
+            st.success("✅ Хронометраж и анализ успешно сохранены!")
+
+elif menu == L['nav_rating']:
+    st.header(L['nav_rating'])
+    conn = sqlite3.connect('school_focus_final_v14.db')
+    df = pd.read_sql_query("SELECT * FROM reports", conn)
+    conn.close()
+    if not df.empty:
+        st.dataframe(df[['date', 'teacher', 'student', 'subject', 'percent']])
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            df.to_excel(writer, index=False)
+        st.download_button(L['excel_btn'], output.getvalue(), "Focus_Report.xlsx")
+
+elif menu == L['nav_map']:
+    st.header(L['nav_map'])
+    conn = sqlite3.connect('school_focus_final_v14.db')
+    df = pd.read_sql_query("SELECT * FROM reports", conn)
+    conn.close()
+    if not df.empty:
+        t_name = st.selectbox(L['teacher'], df['teacher'].unique())
+        t_df = df[df['teacher'] == t_name].sort_values('date')
+        st.plotly_chart(px.line(t_df, x='date', y='percent', markers=True, title="Динамика проф. мастерства"))
+        for _, r in t_df.iterrows():
+            with st.expander(f"{r['date']} - {r['topic']} ({r['percent']}%)"):
+                word_data = create_official_docx(r, lang_choice)
+                st.download_button(L['word_btn'], word_data, f"Protokol_{r['teacher']}_{r['date']}.docx")
+                st.info(f"Рекомендация: {r['advice']}")
