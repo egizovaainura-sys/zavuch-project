@@ -12,7 +12,7 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 # --- НАСТРОЙКИ СТРАНИЦЫ ---
 st.set_page_config(page_title="Smart Завуч: Фокус-группа", layout="wide")
 
-# --- СЛОВАРЬ ИНТЕРФЕЙСА (Полный список ключей для исключения KeyError) ---
+# --- СЛОВАРЬ ИНТЕРФЕЙСА (Теперь критерии внутри!) ---
 LANGS = {
     'RU': {
         'title': "Smart Завуч 🇰🇿",
@@ -41,8 +41,8 @@ LANGS = {
         'reflection': "Рефлексия (обратная связь)",
         'stages_header': "⏳ Ход урока по этапам (Учитель / Ученик)",
         'conclusion_header': "4. Выводы и рекомендации",
-        'strengths_label': "Сильные стороны урока (1, 2, 3):",
-        'growth_label': "Зоны роста (1, 2, 3):",
+        'strengths_label': "Сильные стороны урока:",
+        'growth_label': "Зоны роста:",
         'final_advice': "5. Конкретные рекомендации учителю",
         'save_btn': "💾 Сохранить отчет в базу",
         'excel_btn': "📥 Скачать мониторинг (Excel)",
@@ -51,7 +51,17 @@ LANGS = {
         'score_label': "Балл",
         'action_t': "Действие учителя",
         'action_s': "Действие ученика",
-        'copy_msg': "Текст справки готов:"
+        'copy_msg': "Текст справки готов:",
+        'criteria_list': [
+            "Четкость и достижимость целей урока",
+            "Содержание материала (научность, доступность, ценность)",
+            "Разнообразие методов и приемов (АКТ, ИКТ, группы)",
+            "Дифференциация заданий для учащихся 'резерва'",
+            "Логика и взаимосвязь этапов урока",
+            "Критериальное оценивание (кері байланыс)",
+            "Коммуникация и психологическая атмосфера",
+            "Эффективность использования времени"
+        ]
     },
     'KZ': {
         'title': "Smart Завуч 🇰🇿",
@@ -80,8 +90,8 @@ LANGS = {
         'reflection': "Рефлексия (кері байланыс)",
         'stages_header': "⏳ Сабақ кезеңдері (Мұғалім / Оқушы)",
         'conclusion_header': "4. Қорытынды және ұсыныстар",
-        'strengths_label': "Сабақтың күшті жақтары (1, 2, 3):",
-        'growth_label': "Даму аймақтары (1, 2, 3):",
+        'strengths_label': "Сабақтың күшті жақтары:",
+        'growth_label': "Даму аймақтары:",
         'final_advice': "5. Мұғалімге арналған нақты ұсыныстар",
         'save_btn': "💾 Мәліметтерді сақтау",
         'excel_btn': "📥 Есепті жүктеу (Excel)",
@@ -90,20 +100,19 @@ LANGS = {
         'score_label': "Баға",
         'action_t': "Мұғалім әрекеті",
         'action_s': "Оқушы реакциясы",
-        'copy_msg': "Анықтама мәтіні дайын:"
+        'copy_msg': "Анықтама мәтіні дайын:",
+        'criteria_list': [
+            "Сабақ мақсаттарының айқындылығы мен қолжетімділігі",
+            "Материалдың мазмұны (ғылымилығы, қолжетімділігі)",
+            "Әдіс-тәсілдердің әртүрлілігі (АКТ, ИКТ, топтық)",
+            "«Резерв» оқушыларына арналған тапсырмаларды саралау",
+            "Сабақ кезеңдерінің қисындылығы мен байланысы",
+            "Критериалды бағалау (кері байланыс)",
+            "Коммуникация және психологиялық ахуал",
+            "Уақытты пайдаланудың тиімділігі"
+        ]
     }
 }
-
-CRITERIA = [
-    "Четкость и достижимость целей урока",
-    "Содержание материала (научность, доступность, воспитательная ценность)",
-    "Разнообразие методов и приемов (АКТ, ИКТ, группы, жеке)",
-    "Дифференциация заданий для учащихся 'резерва'",
-    "Логика и взаимосвязь этапов урока",
-    "Критериальное оценивание (кері байланыс, формативті)",
-    "Коммуникация и психологическая атмосфера",
-    "Эффективность использования времени"
-]
 
 # --- ИНИЦИАЛИЗАЦИЯ БД ---
 def init_db():
@@ -120,7 +129,7 @@ def init_db():
     conn.commit()
     conn.close()
 
-# --- ФУНКЦИЯ СОЗДАНИЯ WORD (Официальный бланк) ---
+# --- ФУНКЦИЯ WORD ---
 def create_official_docx(data, lang):
     L = LANGS[lang]
     doc = Document()
@@ -128,7 +137,6 @@ def create_official_docx(data, lang):
     style.font.name = 'Times New Roman'
     style.font.size = Pt(11)
 
-    # Заголовок
     h = doc.add_paragraph()
     h.alignment = WD_ALIGN_PARAGRAPH.CENTER
     run = h.add_run(L['header'])
@@ -165,16 +173,10 @@ def create_official_docx(data, lang):
     t3.cell(2,0).text = "Середина"; t3.cell(2,1).text = data['middle_t']; t3.cell(2,2).text = data['middle_s']
     t3.cell(3,0).text = "Конец"; t3.cell(3,1).text = data['end_t']; t3.cell(3,2).text = data['end_s']
 
-    # 4. Профессионализм
-    doc.add_heading('4. Профессионализм и Анализ', level=1)
-    doc.add_paragraph(f"ИКТ: {data['ict_usage']}")
-    doc.add_paragraph(f"Методы: {data['methods']}")
-    doc.add_paragraph(f"Рефлексия: {data['reflection']}")
-
-    # 5. Выводы
+    # 4. Выводы
     doc.add_heading(L['conclusion_header'], level=1)
-    doc.add_paragraph(f"Сильные стороны:\n1. {data['s1']}\n2. {data['s2']}\n3. {data['s3']}")
-    doc.add_paragraph(f"Зоны роста:\n1. {data['g1']}\n2. {data['g2']}\n3. {data['g3']}")
+    doc.add_paragraph(f"{L['strengths_label']}\n1. {data['s1']}\n2. {data['s2']}\n3. {data['s3']}")
+    doc.add_paragraph(f"{L['growth_label']}\n1. {data['g1']}\n2. {data['g2']}\n3. {data['g3']}")
     doc.add_paragraph(f"РЕКОМЕНДАЦИЯ: {data['advice']}")
 
     bio = io.BytesIO()
@@ -211,7 +213,7 @@ if menu == L['nav_new']:
         res_list = []
         for i in range(1, 4):
             cols = st.columns([2, 3, 3, 1])
-            fio = cols[0].text_input(f"Ученик {i} ФИО", key=f"fio_{i}")
+            fio = cols[0].text_input(f"{L['res_fio']} {i}", key=f"fio_{i}")
             act = cols[1].text_input(L['res_inter'], key=f"act_{i}")
             re = cols[2].text_input(L['res_react'], key=f"re_{i}")
             idx = cols[3].text_input("УД/ТБ", key=f"idx_{i}")
@@ -223,26 +225,26 @@ if menu == L['nav_new']:
         st_tabs = st.tabs(["Начало", "Середина", "Конец", "Методы/ИКТ"])
         with st_tabs[0]:
             cl1, cl2 = st.columns(2)
-            start_t = cl1.text_area(L['action_t'] + " (Начало)", key="st_t")
-            start_s = cl2.text_area(L['action_s'] + " (Начало)", key="st_s")
+            start_t = cl1.text_area(L['action_t'] + " (Start)", key="st_t")
+            start_s = cl2.text_area(L['action_s'] + " (Start)", key="st_s")
         with st_tabs[1]:
             cl1, cl2 = st.columns(2)
-            middle_t = cl1.text_area(L['action_t'] + " (Середина)", key="md_t")
-            middle_s = cl2.text_area(L['action_s'] + " (Середина)", key="md_s")
+            middle_t = cl1.text_area(L['action_t'] + " (Middle)", key="md_t")
+            middle_s = cl2.text_area(L['action_s'] + " (Middle)", key="md_s")
         with st_tabs[2]:
             cl1, cl2 = st.columns(2)
-            end_t = cl1.text_area(L['action_t'] + " (Конец)", key="ed_t")
-            end_s = cl2.text_area(L['action_s'] + " (Конец)", key="ed_s")
+            end_t = cl1.text_area(L['action_t'] + " (End)", key="ed_t")
+            end_s = cl2.text_area(L['action_s'] + " (End)", key="ed_s")
         with st_tabs[3]:
             ict = st.text_area(L['ict_label'], key="ict_v")
             methods = st.text_area(L['methods_label'], key="meth_v")
             reflection = st.text_area(L['reflection'], key="refl_v")
 
-        # 4. Критерии
+        # 4. Критерии (ИСПРАВЛЕННЫЙ ЦИКЛ)
         st.divider()
         st.subheader(L['crit_header'])
         scores_res, comms_res = {}, {}
-        for i, crit in enumerate(CRITERIA):
+        for i, crit in enumerate(L['criteria_list']):
             cl, cs, cf = st.columns([3, 1, 3])
             cl.write(f"**{i+1}. {crit}**")
             sc_val = cs.selectbox(L['score_label'], [2, 1, 0], format_func=lambda x: "2+" if x==2 else "1+" if x==1 else "-", key=f"sc_{i}")
@@ -253,12 +255,14 @@ if menu == L['nav_new']:
         # 5. Выводы
         st.divider()
         st.subheader(L['conclusion_header'])
-        s1 = st.text_input("Сильная сторона 1", key="s1_v")
-        s2 = st.text_input("Сильная сторона 2", key="s2_v")
-        s3 = st.text_input("Сильная сторона 3", key="s3_v")
-        g1 = st.text_input("Зона роста 1", key="g1_v")
-        g2 = st.text_input("Зона роста 2", key="g2_v")
-        g3 = st.text_input("Зона роста 3", key="g3_v")
+        st.write(L['strengths_label'])
+        s1 = st.text_input("1", key="s1_v")
+        s2 = st.text_input("2", key="s2_v")
+        s3 = st.text_input("3", key="s3_v")
+        st.write(L['growth_label'])
+        g1 = st.text_input("1 ", key="g1_v")
+        g2 = st.text_input("2 ", key="g2_v")
+        g3 = st.text_input("3 ", key="g3_v")
         advice = st.text_area(L['final_advice'], key="adv_v")
 
         if st.form_submit_button(L['save_btn']):
@@ -272,7 +276,7 @@ if menu == L['nav_new']:
                 (date.strftime("%Y-%m-%d"), quarter, teacher, student, subject, grade, topic, goal, purpose, start_t, start_s, middle_t, middle_s, end_t, end_s, ict, methods, reflection, json.dumps(res_list), json.dumps(scores_res), json.dumps(comms_res), s1, s2, s3, g1, g2, g3, advice, percent, lang_choice))
             conn.commit()
             conn.close()
-            st.success("✅ Хронометраж и анализ успешно сохранены!")
+            st.success("✅ Сақталды! / Сохранено!")
 
 elif menu == L['nav_rating']:
     st.header(L['nav_rating'])
@@ -294,9 +298,8 @@ elif menu == L['nav_map']:
     if not df.empty:
         t_name = st.selectbox(L['teacher'], df['teacher'].unique())
         t_df = df[df['teacher'] == t_name].sort_values('date')
-        st.plotly_chart(px.line(t_df, x='date', y='percent', markers=True, title="Динамика проф. мастерства"))
+        st.plotly_chart(px.line(t_df, x='date', y='percent', markers=True, title="Динамика"))
         for _, r in t_df.iterrows():
             with st.expander(f"{r['date']} - {r['topic']} ({r['percent']}%)"):
                 word_data = create_official_docx(r, lang_choice)
                 st.download_button(L['word_btn'], word_data, f"Protokol_{r['teacher']}_{r['date']}.docx")
-                st.info(f"Рекомендация: {r['advice']}")
