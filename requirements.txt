@@ -3,4 +3,3 @@ plotly
 pandas
 python-docx
 xlsxwriter
-st-gsheets-connection
