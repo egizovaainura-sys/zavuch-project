@@ -14,9 +14,8 @@ st.set_page_config(page_title="Smart Завуч: Фокус-группа", layou
 
 # --- 2. БАЗА ДАННЫХ (Для сохранения отчетов) ---
 def init_db():
-    conn = sqlite3.connect('school_focus_final_v15.db')
+    conn = sqlite3.connect('school_focus_final_v16.db') # Обновил версию БД
     c = conn.cursor()
-    # Таблица для хранения отчетов
     c.execute('''CREATE TABLE IF NOT EXISTS reports (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id TEXT, 
@@ -34,13 +33,10 @@ def check_access_simple(phone_number):
     try:
         # Ваша ссылка на таблицу (экспорт в CSV)
         sheet_url = "https://docs.google.com/spreadsheets/d/1Z1BUjdyNm6sv9CvZ-gDmljp2kjhOHWVH7lK-gh53RtQ/export?format=csv"
-        
         # Читаем таблицу
         df = pd.read_csv(sheet_url)
-        
         # Берем ВТОРОЙ столбец (индекс 1), где телефоны
         allowed_list = df.iloc[:, 1].astype(str).str.strip().tolist()
-        
         # Очищаем ввод
         clean_phone = str(phone_number).strip()
         
@@ -51,7 +47,7 @@ def check_access_simple(phone_number):
         st.error(f"Ошибка доступа к таблице: {e}")
         return False
 
-# --- 4. СЛОВАРЬ ИНТЕРФЕЙСА (ВАШ ОРИГИНАЛЬНЫЙ) ---
+# --- 4. СЛОВАРЬ ИНТЕРФЕЙСА ---
 LANGS = {
     'RU': {
         'title': "Smart Завуч 🇰🇿", 'header': "ЛИСТ НАБЛЮДЕНИЯ УРОКА (ФОКУС-ГРУППА)",
@@ -103,7 +99,7 @@ LANGS = {
     }
 }
 
-# --- 5. ФУНКЦИЯ ГЕНЕРАЦИИ WORD (ВАША ОРИГИНАЛЬНАЯ) ---
+# --- 5. ФУНКЦИЯ ГЕНЕРАЦИИ WORD ---
 def create_official_docx(data, lang):
     L = LANGS[lang]
     doc = Document()
@@ -159,7 +155,7 @@ init_db()
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
 
-# --- ОКНО ВХОДА (НОВОЕ) ---
+# --- ОКНО ВХОДА ---
 if not st.session_state['logged_in']:
     st.title("🔐 Smart Завуч: Вход в систему")
     col1, col2 = st.columns([2,1])
@@ -178,13 +174,31 @@ if not st.session_state['logged_in']:
                 st.error("Номер не найден. Проверьте правильность ввода (ВТОРОЙ столбец таблицы).")
     st.stop()
 
-# --- ИНТЕРФЕЙС ПРИЛОЖЕНИЯ (ВОЗВРАЩАЕМ КАК БЫЛО) ---
+# --- МЕНЮ И ИНТЕРФЕЙС ---
 st.sidebar.title(f"👤 {st.session_state['username']}")
 if st.sidebar.button("Выйти"):
     st.session_state['logged_in'] = False
     st.rerun()
 
-st.sidebar.divider()
+# === ВОТ ЗДЕСЬ Я ДОБАВИЛ ВАШУ КАРТОЧКУ АВТОРА ===
+st.sidebar.markdown("---")
+st.sidebar.markdown(
+    f"""
+    <div style="text-align: center;">
+        <p style="font-size: 0.85em; color: gray; margin-bottom: 5px;">Автор и разработчик:</p>
+        <p style="font-weight: bold; color: #333; margin-bottom: 10px;">Адильбаева Айнура Дуйшембековна</p>
+        <a href="https://instagram.com/uchitel_tdk" target="_blank" style="text-decoration: none;">
+            <div style="display: inline-block; background: linear-gradient(45deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888); 
+                        color: white; padding: 8px 15px; border-radius: 20px; font-weight: bold; font-size: 0.9em; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">
+                📸 @uchitel_tdk
+            </div>
+        </a>
+    </div>
+    """, unsafe_allow_html=True
+)
+st.sidebar.markdown("---")
+# ================================================
+
 lang_choice = st.sidebar.selectbox("🌍 Язык / Тіл", ['RU', 'KZ'])
 L = LANGS[lang_choice]
 menu = st.sidebar.radio(L['title'], [L['nav_new'], L['nav_rating'], L['nav_map']])
@@ -261,7 +275,7 @@ if menu == L['nav_new']:
         if st.form_submit_button(L['save_btn']):
             total = sum(scores_res.values())
             percent = (total / 16) * 100
-            conn = sqlite3.connect('school_focus_final_v15.db')
+            conn = sqlite3.connect('school_focus_final_v16.db')
             c = conn.cursor()
             c.execute('''INSERT INTO reports 
                 (user_id, date, quarter, teacher, student, subject, grade, topic, goal, purpose, start_t, start_s, middle_t, middle_s, end_t, end_s, ict_usage, methods, reflection, reserve_json, scores_json, comments_json, s1, s2, s3, g1, g2, g3, advice, percent, lang) 
@@ -273,7 +287,7 @@ if menu == L['nav_new']:
 
 elif menu == L['nav_rating']:
     st.header(L['nav_rating'])
-    conn = sqlite3.connect('school_focus_final_v15.db')
+    conn = sqlite3.connect('school_focus_final_v16.db')
     df = pd.read_sql_query("SELECT * FROM reports WHERE user_id = ?", conn, params=(str(st.session_state['user_id']),))
     conn.close()
     if not df.empty:
@@ -287,7 +301,7 @@ elif menu == L['nav_rating']:
 
 elif menu == L['nav_map']:
     st.header(L['nav_map'])
-    conn = sqlite3.connect('school_focus_final_v15.db')
+    conn = sqlite3.connect('school_focus_final_v16.db')
     df = pd.read_sql_query("SELECT * FROM reports WHERE user_id = ?", conn, params=(str(st.session_state['user_id']),))
     conn.close()
     if not df.empty:
