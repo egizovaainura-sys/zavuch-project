@@ -8,7 +8,7 @@ import json
 from docx import Document
 from docx.shared import Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-from st_gsheets_connection import GSheetsConnection # Новая библиотека
+from st_gsheets_connection import GSheetsConnection
 
 # --- 1. НАСТРОЙКИ СТРАНИЦЫ ---
 st.set_page_config(page_title="Smart Завуч: Фокус-группа", layout="wide")
@@ -326,3 +326,4 @@ elif menu == L['nav_map']:
                 st.download_button(L['word_btn'], word_data, f"Protokol_{r['teacher']}_{r['date']}.docx", key=f"btn_{r['id']}")
     else:
         st.info("Нет данных для отображения.")
+
