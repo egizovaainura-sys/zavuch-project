@@ -5,35 +5,24 @@ from datetime import datetime
 import plotly.express as px
 import io
 import json
-import hashlib
 from docx import Document
-from docx.shared import Pt, Inches
+from docx.shared import Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from st_gsheets_connection import GSheetsConnection # Новая библиотека
 
 # --- 1. НАСТРОЙКИ СТРАНИЦЫ ---
 st.set_page_config(page_title="Smart Завуч: Фокус-группа", layout="wide")
 
-# --- 2. БЕЗОПАСНОСТЬ И БАЗА ДАННЫХ ---
-def make_hashes(password):
-    return hashlib.sha256(str.encode(password)).hexdigest()
-
-def check_hashes(password, hashed_text):
-    if make_hashes(password) == hashed_text: return hashed_text
-    return False
-
+# --- 2. БАЗА ДАННЫХ (Для отчетов) ---
+# Важно: На Streamlit Cloud SQLite обнуляется при перезагрузке. 
+# Для надежности в будущем лучше перевести и отчеты на Google Sheets.
 def init_db():
-    conn = sqlite3.connect('school_focus_final_v14.db')
+    conn = sqlite3.connect('school_focus_final_v15.db')
     c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS users 
-                 (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, password TEXT)''')
-    try:
-        c.execute('ALTER TABLE reports ADD COLUMN user_id INTEGER')
-    except:
-        pass # Если колонка уже есть
-    
+    # Изменили user_id на TEXT, чтобы писать туда номер телефона
     c.execute('''CREATE TABLE IF NOT EXISTS reports (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER,
+        user_id TEXT, 
         date TEXT, quarter INTEGER, teacher TEXT, student TEXT, subject TEXT, grade TEXT, topic TEXT, goal TEXT,
         purpose TEXT, start_t TEXT, start_s TEXT, middle_t TEXT, middle_s TEXT, end_t TEXT, end_s TEXT,
         ict_usage TEXT, methods TEXT, reflection TEXT,
@@ -43,7 +32,25 @@ def init_db():
     conn.commit()
     conn.close()
 
-# --- 3. СЛОВАРЬ ИНТЕРФЕЙСА ---
+# --- 3. ФУНКЦИЯ ПРОВЕРКИ ДОСТУПА (ГУГЛ ТАБЛИЦА) ---
+def check_access(phone_number):
+    try:
+        conn = st.connection("gsheets", type=GSheetsConnection)
+        # Читаем 1-й столбец (A) и превращаем в список строк
+        df = conn.read(worksheet="Sheet1", usecols=[0], ttl=60) # ttl=60 обновляет кеш каждую минуту
+        allowed_list = df.iloc[:, 0].astype(str).str.strip().tolist()
+        
+        # Очищаем ввод от пробелов
+        clean_phone = str(phone_number).strip()
+        
+        if clean_phone in allowed_list:
+            return True
+        return False
+    except Exception as e:
+        st.error(f"Ошибка соединения с таблицей: {e}")
+        return False
+
+# --- 4. СЛОВАРЬ ИНТЕРФЕЙСА (Без изменений) ---
 LANGS = {
     'RU': {
         'title': "Smart Завуч 🇰🇿", 'header': "ЛИСТ НАБЛЮДЕНИЯ УРОКА (ФОКУС-ГРУППА)",
@@ -95,7 +102,7 @@ LANGS = {
     }
 }
 
-# --- 4. ФУНКЦИЯ WORD ---
+# --- 5. ФУНКЦИЯ WORD (Без изменений) ---
 def create_official_docx(data, lang):
     L = LANGS[lang]
     doc = Document()
@@ -145,48 +152,42 @@ def create_official_docx(data, lang):
     doc.save(bio)
     return bio.getvalue()
 
-# --- 5. ЛОГИКА ПРИЛОЖЕНИЯ ---
+# --- 6. ЛОГИКА ПРИЛОЖЕНИЯ ---
 init_db()
 
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
+if 'user_id' not in st.session_state:
+    st.session_state['user_id'] = None
 
-# ОКНО ВХОДА
+# --- НОВАЯ СИСТЕМА ВХОДА (ПЛАТНЫЙ ДОСТУП) ---
 if not st.session_state['logged_in']:
-    st.sidebar.title("Вход в Smart Завуч")
-    auth_mode = st.sidebar.selectbox("Выберите действие:", ["Вход", "Регистрация"])
-    username = st.sidebar.text_input("Логин")
-    password = st.sidebar.text_input("Пароль", type='password')
+    st.title("🔐 Smart Завуч: Вход в систему")
     
-    if st.sidebar.button("Выполнить"):
-        conn = sqlite3.connect('school_focus_final_v14.db')
-        c = conn.cursor()
-        if auth_mode == "Регистрация":
-            try:
-                c.execute('INSERT INTO users(username, password) VALUES (?,?)', (username, make_hashes(password)))
-                conn.commit()
-                st.sidebar.success("Аккаунт создан! Теперь войдите.")
-            except:
-                st.sidebar.error("Такой логин уже занят.")
-        else:
-            c.execute('SELECT * FROM users WHERE username = ?', (username,))
-            user_data = c.fetchone()
-            if user_data and check_hashes(password, user_data[2]):
+    col1, col2 = st.columns([2,1])
+    with col1:
+        st.info("Приложение доступно только для оплативших подписку.")
+        phone_input = st.text_input("Введите ваш номер (как при оплате, например 77011234567):")
+        
+        if st.button("Войти"):
+            if check_access(phone_input):
                 st.session_state['logged_in'] = True
-                st.session_state['user_id'] = user_data[0]
-                st.session_state['username'] = username
+                st.session_state['user_id'] = phone_input # ID теперь = номеру телефона
+                st.session_state['username'] = phone_input
+                st.success("Доступ разрешен!")
                 st.rerun()
             else:
-                st.sidebar.error("Неверный логин или пароль.")
-        conn.close()
-    
-    st.info("Пожалуйста, авторизуйтесь для работы с системой.")
+                st.error("Номер не найден в базе активных подписок.")
+                st.markdown("---")
+                st.write("**Как получить доступ?**")
+                st.link_button("Написать в WhatsApp", "https://wa.me/77010000000?text=Хочу_купить_доступ") # Вставьте свой номер
     st.stop()
 
 # --- SIDEBAR ПОСЛЕ ВХОДА ---
 st.sidebar.title(f"👤 {st.session_state['username']}")
 if st.sidebar.button("Выйти из системы"):
     st.session_state['logged_in'] = False
+    st.session_state['user_id'] = None
     st.rerun()
 
 # БЛОК РАЗРАБОТЧИКА
@@ -211,7 +212,7 @@ lang_choice = st.sidebar.selectbox("🌍 Язык / Тіл", ['RU', 'KZ'])
 L = LANGS[lang_choice]
 menu = st.sidebar.radio(L['title'], [L['nav_new'], L['nav_rating'], L['nav_map']])
 
-# --- 6. ОСНОВНЫЕ РАЗДЕЛЫ ---
+# --- 7. ОСНОВНЫЕ РАЗДЕЛЫ ---
 
 if menu == L['nav_new']:
     st.header(L['header'])
@@ -285,7 +286,7 @@ if menu == L['nav_new']:
         if st.form_submit_button(L['save_btn']):
             total = sum(scores_res.values())
             percent = (total / 16) * 100
-            conn = sqlite3.connect('school_focus_final_v14.db')
+            conn = sqlite3.connect('school_focus_final_v15.db')
             c = conn.cursor()
             c.execute('''INSERT INTO reports 
                 (user_id, date, quarter, teacher, student, subject, grade, topic, goal, purpose, start_t, start_s, middle_t, middle_s, end_t, end_s, ict_usage, methods, reflection, reserve_json, scores_json, comments_json, s1, s2, s3, g1, g2, g3, advice, percent, lang) 
@@ -297,8 +298,9 @@ if menu == L['nav_new']:
 
 elif menu == L['nav_rating']:
     st.header(L['nav_rating'])
-    conn = sqlite3.connect('school_focus_final_v14.db')
-    df = pd.read_sql_query("SELECT * FROM reports WHERE user_id = ?", conn, params=(st.session_state['user_id'],))
+    conn = sqlite3.connect('school_focus_final_v15.db')
+    # Используем user_id как строку (телефон)
+    df = pd.read_sql_query("SELECT * FROM reports WHERE user_id = ?", conn, params=(str(st.session_state['user_id']),))
     conn.close()
     if not df.empty:
         st.dataframe(df[['date', 'teacher', 'subject', 'grade', 'percent']])
@@ -311,8 +313,8 @@ elif menu == L['nav_rating']:
 
 elif menu == L['nav_map']:
     st.header(L['nav_map'])
-    conn = sqlite3.connect('school_focus_final_v14.db')
-    df = pd.read_sql_query("SELECT * FROM reports WHERE user_id = ?", conn, params=(st.session_state['user_id'],))
+    conn = sqlite3.connect('school_focus_final_v15.db')
+    df = pd.read_sql_query("SELECT * FROM reports WHERE user_id = ?", conn, params=(str(st.session_state['user_id']),))
     conn.close()
     if not df.empty:
         t_name = st.selectbox(L['teacher'], df['teacher'].unique())
@@ -322,3 +324,5 @@ elif menu == L['nav_map']:
             with st.expander(f"{r['date']} - {r['topic']} ({r['percent']}%)"):
                 word_data = create_official_docx(r, lang_choice)
                 st.download_button(L['word_btn'], word_data, f"Protokol_{r['teacher']}_{r['date']}.docx", key=f"btn_{r['id']}")
+    else:
+        st.info("Нет данных для отображения.")
